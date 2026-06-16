@@ -38,6 +38,16 @@ A typical machine learning challenge will include a large number of predictors, 
 ##  Dimension reduction : motivation 
 Microbiome 16S data example: why we need dimension reduction
 
+```{r}
+# **** Nan add this b/c no animalcules ****
+if (!require("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+
+BiocManager::install("animalcules")
+
+```
+
 ```{r, eval=F}
 library(animalcules)
 run_animalcules()
