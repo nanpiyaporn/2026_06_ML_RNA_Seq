@@ -1,0 +1,223 @@
+---
+title: "workshop4_pp"
+output: html_document
+---
+```{r}
+library(caret)
+library(DT)
+library(tidyverse)
+library(e1071)
+library(gridExtra)
+library(mda)
+library(randomForest)
+
+```
+
+```{r}
+install.packages(c("tidyverse", "DT", "gridExtra"))
+```
+
+```{r}
+install.packages(c("caret", "e1071", "rpart", "randomForest"))
+```
+```{r}
+TBnanostring <- readRDS("TBnanostring.rds")
+
+```
+
+```{r}
+View(TBnanostring)
+```
+
+```{r}
+summary(TBnanostring)
+```
+```{r}
+# too large
+plot(TBnanostring)
+```
+
+```{r}
+library(tidyverse)
+
+pca_out <- prcomp(TBnanostring[, -1])
+
+pca_reduction <- as.data.frame(pca_out$x)
+pca_reduction$Condition <- as.factor(TBnanostring$TB_Status)
+
+ggplot(pca_reduction, aes(x = PC1, y = PC2, color = Condition)) +
+  geom_point() +
+  xlab("PC 1") +
+  ylab("PC 2") +
+  ggtitle("PCA Plot") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+# 1. Split the dataset into "training" and "testing" sets using a 70/30 partition (use `set.seed(0)` and the `caret::createDataPartition`).
+```{r}
+set.seed(0)
+test_index <- createDataPartition(TBnanostring$TB_Status, times = 1, 
+                                  p = 0.3, list = FALSE)
+test_set <- TBnanostring[test_index, ]
+train_set <- TBnanostring[-test_index, ]
+```
+
+Check data
+
+```{r}
+dim(TBnanostring)
+dim(train_set)
+dim(test_set)
+
+table(TBnanostring$TB_Status)
+table(train_set$TB_Status)
+table(test_set$TB_Status)
+```
+Check "LTBI" in the TB_Status column
+
+```{r}
+head(TBnanostring[TBnanostring$TB_Status == "LTBI", ])
+```
+
+# 2. Apply a Support Vector Machine to these data (try linear, radial, and polynomial kernels).
+
+## Apply SVM with linear kernel
+```{r}
+svm_linear <- svm(TB_Status ~ .,
+                  data = train_set,
+                  kernel = "linear",
+                  cost = 10)
+
+pred_linear <- predict(svm_linear, test_set)
+
+confusionMatrix(pred_linear, test_set$TB_Status)
+```
+
+## Apply SVM (Radial basis kernel)
+```{r}
+# Train data
+TBnanostring$TB_Status <- as.factor(TBnanostring$TB_Status)
+
+fit_radial <- svm(TB_Status ~ ., 
+                  data = train_set, 
+                  scale = FALSE,
+                  kernel = "radial", 
+                  cost = 5)
+
+print(fit_radial)
+```
+
+```{r}
+# Test data
+pred_radial <- predict(fit_radial, test_set)
+
+confusionMatrix(pred_radial, test_set$TB_Status)
+```
+
+## Apply SVM(polynomial kernel)
+```{r}
+
+# Train data
+TBnanostring$TB_Status <- as.factor(TBnanostring$TB_Status)
+
+fit_polynomial <- svm(TB_Status ~ ., 
+                  data = train_set, 
+                  scale = FALSE,
+                  kernel = "polynomial", 
+                  cost = 5)
+
+print(fit_polynomial)
+```
+
+
+```{r}
+# Test data
+pred_polynomial <- predict(fit_polynomial, test_set)
+
+confusionMatrix(pred_polynomial, test_set$TB_Status)
+```
+
+
+# Boxplot
+```{r}
+library(tidyverse)
+
+TBnanostring %>%
+  pivot_longer(
+    cols = -TB_Status,
+    names_to = "Gene",
+    values_to = "Expression"
+  ) %>%
+  ggplot(aes(x = TB_Status, y = Expression, fill = TB_Status)) +
+  geom_boxplot() +
+  facet_wrap(~ Gene, scales = "free", ncol = 4) +
+  theme(axis.text.x = element_blank(),
+        legend.position = "bottom") +
+  xlab("TB Status") +
+  ylab("Gene Expression") +
+  ggtitle("Gene Expression by TB Status")
+```
+```{r}
+
+
+# Get all gene column numbers, excluding TB_Status
+gene_cols <- 2:ncol(TBnanostring)
+
+# Loop every 9 genes
+for (start_col in seq(2, ncol(TBnanostring), by = 9)) {
+  
+  end_col <- min(start_col + 8, ncol(TBnanostring))
+  
+  p <- TBnanostring %>%
+    select(TB_Status, start_col:end_col) %>%
+    pivot_longer(
+      cols = -TB_Status,
+      names_to = "Gene",
+      values_to = "Expression"
+    ) %>%
+    ggplot(aes(x = TB_Status, y = Expression, fill = TB_Status)) +
+    geom_boxplot() +
+    facet_wrap(~ Gene, scales = "free", ncol = 3) +
+    theme(axis.text.x = element_blank(),
+          legend.position = "bottom") +
+    xlab("TB Status") +
+    ylab("Gene Expression") +
+    ggtitle(paste("Gene Expression by TB Status: Columns", start_col, "to", end_col))
+  
+  print(p)
+}
+```
+
+#3. Apply a Random Forest Model to these data.
+
+## Trainning
+```{r}
+TB_classifier <- randomForest(TB_Status~., data = train_set, 
+                    importance=T)
+TB_classifier
+```
+
+## Testing
+```{r}
+predicted_TB_table <- predict(TB_classifier, test_set)
+confusionMatrix(predicted_TB_table, test_set$TB_Status)
+
+```
+
+5. Compare the overall accuracy of the prediction methods for each of the machine learning tools in the previous problem. Which one performs the best?  
+
+(Note: the `TBnanostring.Rmd` and `TBnanostring.html` files provide suggested solutions for these analyses)
+
+## Summary
+```{r}
+svm_results <- data.frame(
+  Model = c("SVM Linear", "SVM Radial", "SVM Polynomial", "Random Forest"),
+  Accuracy = c(0.9259, 0.9074, 0.8889, 0.8519),
+  Sensitivity = c(0.9167, 0.9167, 0.7917, 0.8750),
+  Specificity = c(0.9333, 0.9000, 0.9667, 0.8333),
+  Balanced_Accuracy = c(0.9250, 0.9083, 0.8792, 0.8542),
+  Kappa = c(0.8500, 0.8133, 0.7712, 0.7025),
+  Correct_Total = c("50 / 54", "49 / 54", "48 / 54", "46 / 54")
+)
+
+svm_results
+```
